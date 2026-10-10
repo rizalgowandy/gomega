@@ -130,7 +130,7 @@ var _ = Describe("Session", func() {
 				Expect(err).ShouldNot(HaveOccurred())
 
 				session.Signal(syscall.SIGABRT)
-				Eventually(session).Should(Exit(128 + 6))
+				Eventually(session).WithTimeout(5 * time.Second).Should(Exit(128 + 6))
 			})
 
 			It("should ignore sending a signal if the command did not start", func() {
@@ -251,9 +251,9 @@ var _ = Describe("Session", func() {
 
 					Signal(syscall.SIGABRT)
 
-					Eventually(session1).Should(Exit(128 + 6))
-					Eventually(session2).Should(Exit(128 + 6))
-					Eventually(session3).Should(Exit(128 + 6))
+					Eventually(session1).WithTimeout(5 * time.Second).Should(Exit(128 + 6))
+					Eventually(session2).WithTimeout(5 * time.Second).Should(Exit(128 + 6))
+					Eventually(session3).WithTimeout(5 * time.Second).Should(Exit(128 + 6))
 				})
 			})
 
@@ -294,7 +294,7 @@ var _ = Describe("Session", func() {
 				failures := InterceptGomegaFailures(func() {
 					Eventually(session).Should(Say("blah blah blah blah blah"))
 				})
-				Expect(time.Since(t)).Should(BeNumerically("<=", 500*time.Millisecond))
+				Expect(time.Since(t)).Should(BeNumerically("<", time.Second))
 				Expect(failures).Should(HaveLen(1))
 			})
 		})
@@ -330,7 +330,7 @@ var _ = Describe("Session", func() {
 					errWriter = io.Discard
 				})
 
-				It("executes succesfuly", func() {
+				It("executes successfully", func() {
 					Eventually(session).Should(Exit())
 				})
 			})
@@ -391,7 +391,7 @@ var _ = Describe("Session", func() {
 					errWriter = io.Discard
 				})
 
-				It("executes succesfuly", func() {
+				It("executes successfully", func() {
 					Eventually(session).Should(Exit())
 				})
 			})

@@ -4,6 +4,7 @@ import (
 	. "github.com/onsi/ginkgo/v2"
 	. "github.com/onsi/gomega"
 	. "github.com/onsi/gomega/matchers"
+	"github.com/onsi/gomega/matchers/internal/miter"
 )
 
 var _ = Describe("HaveKey", func() {
@@ -39,7 +40,7 @@ var _ = Describe("HaveKey", func() {
 	})
 
 	When("passed a correctly typed nil", func() {
-		It("should operate succesfully on the passed in value", func() {
+		It("should operate successfully on the passed in value", func() {
 			var nilMap map[int]string
 			Expect(nilMap).ShouldNot(HaveKey("foo"))
 		})
@@ -57,6 +58,19 @@ var _ = Describe("HaveKey", func() {
 			Expect(success).Should(BeFalse())
 			Expect(err).Should(HaveOccurred())
 		})
+
+		It("succeeds if any key matches, even if the matcher errors on other keys, and errors only if no key matches (https://github.com/onsi/gomega/issues/926)", func() {
+			actual := map[any]int{"a": 1, 2: 2, "b": 3, "c": 4}
+			for range 100 {
+				success, err := (&HaveKeyMatcher{Key: BeNumerically(">", 1)}).Match(actual)
+				Expect(err).ShouldNot(HaveOccurred())
+				Expect(success).Should(BeTrue())
+
+				success, err = (&HaveKeyMatcher{Key: BeNumerically(">", 2)}).Match(actual)
+				Expect(err).Should(MatchError(ContainSubstring("HaveKey's key matcher failed with")))
+				Expect(success).Should(BeFalse())
+			}
+		})
 	})
 
 	When("passed something that is not a map", func() {
@@ -68,6 +82,69 @@ var _ = Describe("HaveKey", func() {
 			success, err = (&HaveKeyMatcher{Key: "foo"}).Match(nil)
 			Expect(success).Should(BeFalse())
 			Expect(err).Should(HaveOccurred())
+		})
+	})
+
+	Context("iterators", func() {
+		BeforeEach(func() {
+			if !miter.HasIterators() {
+				Skip("iterators not available")
+			}
+		})
+
+		When("passed an iter.Seq2", func() {
+			It("should do the right thing", func() {
+				Expect(universalMapIter2).To(HaveKey("bar"))
+				Expect(universalMapIter2).To(HaveKey(HavePrefix("ba")))
+				Expect(universalMapIter2).NotTo(HaveKey("barrrrz"))
+				Expect(universalMapIter2).NotTo(HaveKey(42))
+			})
+		})
+
+		When("passed a correctly typed nil", func() {
+			It("should operate successfully on the passed in value", func() {
+				var nilIter2 func(func(string, int) bool)
+				Expect(nilIter2).ShouldNot(HaveKey("foo"))
+			})
+		})
+
+		When("the passed in key is actually a matcher", func() {
+			It("should pass each element through the matcher", func() {
+				Expect(universalMapIter2).Should(HaveKey(ContainSubstring("oo")))
+				Expect(universalMapIter2).ShouldNot(HaveKey(ContainSubstring("foobar")))
+			})
+
+			It("should fail if the matcher ever fails", func() {
+				success, err := (&HaveKeyMatcher{Key: ContainSubstring("ar")}).Match(universalIter2)
+				Expect(success).Should(BeFalse())
+				Expect(err).Should(HaveOccurred())
+			})
+
+			It("succeeds if any key matches, even if the matcher errors on other keys, and errors only if no key matches (https://github.com/onsi/gomega/issues/926)", func() {
+				errorFirst := func(yield func(any, int) bool) {
+					_ = yield("a", 1) && yield(2, 2) && yield("b", 3)
+				}
+				matchFirst := func(yield func(any, int) bool) {
+					_ = yield(2, 2) && yield("a", 1) && yield("b", 3)
+				}
+				for _, actual := range []any{errorFirst, matchFirst} {
+					success, err := (&HaveKeyMatcher{Key: BeNumerically(">", 1)}).Match(actual)
+					Expect(err).ShouldNot(HaveOccurred())
+					Expect(success).Should(BeTrue())
+
+					success, err = (&HaveKeyMatcher{Key: BeNumerically(">", 2)}).Match(actual)
+					Expect(err).Should(MatchError(ContainSubstring("HaveKey's key matcher failed with")))
+					Expect(success).Should(BeFalse())
+				}
+			})
+		})
+
+		When("passed something that is not an iter.Seq2", func() {
+			It("should error", func() {
+				success, err := (&HaveKeyMatcher{Key: "foo"}).Match(universalIter)
+				Expect(success).Should(BeFalse())
+				Expect(err).Should(HaveOccurred())
+			})
 		})
 	})
 })

@@ -7,9 +7,10 @@ import (
 	"net/url"
 	"regexp"
 
-	"github.com/golang/protobuf/proto"
 	"github.com/onsi/gomega/gbytes"
 	"github.com/onsi/gomega/ghttp/protobuf"
+	"github.com/onsi/gomega/internal/gutil"
+	"google.golang.org/protobuf/proto"
 
 	. "github.com/onsi/ginkgo/v2"
 	. "github.com/onsi/gomega"
@@ -59,7 +60,7 @@ var _ = Describe("TestServer", func() {
 			Expect(err).ShouldNot(HaveOccurred())
 			Expect(resp.StatusCode).Should(Equal(200))
 
-			body, err := io.ReadAll(resp.Body)
+			body, err := gutil.ReadAll(resp.Body)
 			resp.Body.Close()
 			Expect(err).ShouldNot(HaveOccurred())
 
@@ -69,7 +70,7 @@ var _ = Describe("TestServer", func() {
 			Expect(err).ShouldNot(HaveOccurred())
 			Expect(resp.StatusCode).Should(Equal(200))
 
-			body2, err := io.ReadAll(resp.Body)
+			body2, err := gutil.ReadAll(resp.Body)
 			resp.Body.Close()
 			Expect(err).ShouldNot(HaveOccurred())
 
@@ -77,7 +78,7 @@ var _ = Describe("TestServer", func() {
 		})
 	})
 
-	Describe("closing server mulitple times", func() {
+	Describe("closing server multiple times", func() {
 		It("should not fail", func() {
 			s.Close()
 			Expect(s.Close).ShouldNot(Panic())
@@ -101,7 +102,7 @@ var _ = Describe("TestServer", func() {
 				Expect(err).ShouldNot(HaveOccurred())
 				Expect(resp.StatusCode).Should(Equal(http.StatusForbidden))
 
-				data, err := io.ReadAll(resp.Body)
+				data, err := gutil.ReadAll(resp.Body)
 				Expect(err).ShouldNot(HaveOccurred())
 				Expect(data).Should(BeEmpty())
 			})
@@ -498,6 +499,69 @@ var _ = Describe("TestServer", func() {
 			})
 		})
 
+		Describe("VerifyHost", func() {
+			var (
+				err error
+				req *http.Request
+			)
+
+			BeforeEach(func() {
+				req, err = http.NewRequest("GET", s.URL()+"/host", nil)
+				Expect(err).ShouldNot(HaveOccurred())
+			})
+
+			When("passed a matcher for host", func() {
+				BeforeEach(func() {
+					s.AppendHandlers(CombineHandlers(
+						VerifyRequest("GET", "/host"),
+						VerifyHost(Equal("my-host")),
+					))
+				})
+
+				It("should verify the host", func() {
+					req.Host = "my-host"
+
+					resp, err = http.DefaultClient.Do(req)
+					Expect(err).ShouldNot(HaveOccurred())
+				})
+
+				It("should reject an invalid host", func() {
+					req.Host = "not-my-host"
+
+					failures := InterceptGomegaFailures(func() {
+						http.DefaultClient.Do(req)
+					})
+					Expect(failures).Should(HaveLen(1))
+				})
+			})
+
+			When("passed a string for host", func() {
+				BeforeEach(func() {
+					s.AppendHandlers(CombineHandlers(
+						VerifyRequest("GET", "/host"),
+						VerifyHost("my-host"),
+					))
+				})
+
+				It("should verify the host", func() {
+					req.Host = "my-host"
+
+					resp, err = http.DefaultClient.Do(req)
+					Expect(err).ShouldNot(HaveOccurred())
+				})
+
+				It("should reject an invalid host", func() {
+					req.Host = "not-my-host"
+
+					failures := InterceptGomegaFailures(func() {
+						http.DefaultClient.Do(req)
+					})
+					Expect(failures).Should(HaveLen(1))
+				})
+			})
+
+		})
+
 		Describe("VerifyBody", func() {
 			BeforeEach(func() {
 				s.AppendHandlers(CombineHandlers(
@@ -791,7 +855,7 @@ var _ = Describe("TestServer", func() {
 
 					Expect(resp.StatusCode).Should(Equal(http.StatusCreated))
 
-					body, err := io.ReadAll(resp.Body)
+					body, err := gutil.ReadAll(resp.Body)
 					Expect(err).ShouldNot(HaveOccurred())
 					Expect(body).Should(Equal([]byte("sweet")))
 
@@ -800,7 +864,7 @@ var _ = Describe("TestServer", func() {
 
 					Expect(resp.StatusCode).Should(Equal(http.StatusOK))
 
-					body, err = io.ReadAll(resp.Body)
+					body, err = gutil.ReadAll(resp.Body)
 					Expect(err).ShouldNot(HaveOccurred())
 					Expect(body).Should(Equal([]byte("sour")))
 				})
@@ -819,7 +883,7 @@ var _ = Describe("TestServer", func() {
 					Expect(err).ShouldNot(HaveOccurred())
 
 					Expect(resp.StatusCode).Should(Equal(http.StatusCreated))
-					Expect(io.ReadAll(resp.Body)).Should(Equal([]byte("sweet")))
+					Expect(gutil.ReadAll(resp.Body)).Should(Equal([]byte("sweet")))
 					Expect(resp.Header.Get("X-Custom-Header")).Should(Equal("my header"))
 				})
 			})
@@ -853,7 +917,7 @@ var _ = Describe("TestServer", func() {
 
 				Expect(resp.StatusCode).Should(Equal(http.StatusCreated))
 
-				body, err := io.ReadAll(resp.Body)
+				body, err := gutil.ReadAll(resp.Body)
 				Expect(err).ShouldNot(HaveOccurred())
 				Expect(body).Should(Equal([]byte("tasty")))
 
@@ -862,7 +926,7 @@ var _ = Describe("TestServer", func() {
 
 				Expect(resp.StatusCode).Should(Equal(http.StatusCreated))
 
-				body, err = io.ReadAll(resp.Body)
+				body, err = gutil.ReadAll(resp.Body)
 				Expect(err).ShouldNot(HaveOccurred())
 				Expect(body).Should(Equal([]byte("treat")))
 			})
@@ -880,7 +944,7 @@ var _ = Describe("TestServer", func() {
 
 					Expect(err).ShouldNot(HaveOccurred())
 					Expect(resp.StatusCode).Should(Equal(http.StatusOK))
-					body, err := io.ReadAll(resp.Body)
+					body, err := gutil.ReadAll(resp.Body)
 					Expect(err).ShouldNot(HaveOccurred())
 					Expect(body).Should(BeEmpty())
 
@@ -904,7 +968,7 @@ var _ = Describe("TestServer", func() {
 
 					Expect(resp.StatusCode).Should(Equal(http.StatusCreated))
 
-					body, err := io.ReadAll(resp.Body)
+					body, err := gutil.ReadAll(resp.Body)
 					Expect(err).ShouldNot(HaveOccurred())
 					Expect(body).Should(MatchJSON("[1,2,3]"))
 				})
@@ -989,7 +1053,7 @@ var _ = Describe("TestServer", func() {
 
 					Expect(resp.StatusCode).Should(Equal(http.StatusCreated))
 
-					body, err := io.ReadAll(resp.Body)
+					body, err := gutil.ReadAll(resp.Body)
 					Expect(err).ShouldNot(HaveOccurred())
 					Expect(body).Should(MatchJSON(`{"Key": "Jim", "Value": "Codes"}`))
 				})
@@ -1070,7 +1134,7 @@ var _ = Describe("TestServer", func() {
 					Expect(resp.StatusCode).Should(Equal(http.StatusCreated))
 
 					var received protobuf.SimpleMessage
-					body, err := io.ReadAll(resp.Body)
+					body, err := gutil.ReadAll(resp.Body)
 					Expect(err).ShouldNot(HaveOccurred())
 					err = proto.Unmarshal(body, &received)
 					Expect(err).ShouldNot(HaveOccurred())
@@ -1124,6 +1188,65 @@ var _ = Describe("TestServer", func() {
 					})
 				})
 			})
+		})
+	})
+
+	Describe("RoundTripper", func() {
+		var called []string
+		BeforeEach(func() {
+			called = []string{}
+			s.RouteToHandler("GET", "/routed", func(w http.ResponseWriter, req *http.Request) {
+				called = append(called, "get")
+			})
+			s.RouteToHandler("POST", "/routed", func(w http.ResponseWriter, req *http.Request) {
+				called = append(called, "post")
+			})
+		})
+
+		It("should send http traffic to test server with default transport", func() {
+			client := http.Client{Transport: s.RoundTripper(nil)}
+			client.Get("http://example.com/routed")
+			client.Post("http://example.com/routed", "application/json", nil)
+			client.Get("http://foo.bar/routed")
+			client.Post("http://foo.bar/routed", "application/json", nil)
+			Expect(called).Should(Equal([]string{"get", "post", "get", "post"}))
+		})
+
+		It("should send https traffic to test server with default transport", func() {
+			client := http.Client{Transport: s.RoundTripper(nil)}
+			client.Get("https://example.com/routed")
+			client.Post("https://example.com/routed", "application/json", nil)
+			client.Get("https://foo.bar/routed")
+			client.Post("https://foo.bar/routed", "application/json", nil)
+			Expect(called).Should(Equal([]string{"get", "post", "get", "post"}))
+		})
+
+		It("should send http traffic to test server with default transport", func() {
+			transport := http.Transport{}
+			client := http.Client{Transport: s.RoundTripper(&transport)}
+			client.Get("http://example.com/routed")
+			client.Post("http://example.com/routed", "application/json", nil)
+			client.Get("http://foo.bar/routed")
+			client.Post("http://foo.bar/routed", "application/json", nil)
+			Expect(called).Should(Equal([]string{"get", "post", "get", "post"}))
+		})
+
+		It("should send http traffic to test server with default transport", func() {
+			transport := http.Transport{}
+			client := http.Client{Transport: s.RoundTripper(&transport)}
+			client.Get("https://example.com/routed")
+			client.Post("https://example.com/routed", "application/json", nil)
+			client.Get("https://foo.bar/routed")
+			client.Post("https://foo.bar/routed", "application/json", nil)
+			Expect(called).Should(Equal([]string{"get", "post", "get", "post"}))
+		})
+
+		It("should not change the path of the request", func() {
+			client := http.Client{Transport: s.RoundTripper(nil)}
+			client.Get("https://example.com/routed")
+			Expect(called).Should(Equal([]string{"get"}))
+			Expect(s.ReceivedRequests()).Should(HaveLen(1))
+			Expect(s.ReceivedRequests()[0].URL.Path).Should(Equal("/routed"))
 		})
 	})
 })

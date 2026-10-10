@@ -1,6 +1,8 @@
 package matchers_test
 
 import (
+	"math"
+
 	. "github.com/onsi/ginkgo/v2"
 	. "github.com/onsi/gomega"
 	. "github.com/onsi/gomega/matchers"
@@ -120,7 +122,7 @@ var _ = Describe("BeNumerically", func() {
 				})
 
 				Context("and there is a precision parameter", func() {
-					It("should use precision paramter", func() {
+					It("should use precision parameter", func() {
 						Expect(5).Should(BeNumerically("~", 6, 2))
 						Expect(5).ShouldNot(BeNumerically("~", 8, 2))
 						Expect(uint(5)).Should(BeNumerically("~", 6, 1))
@@ -128,11 +130,73 @@ var _ = Describe("BeNumerically", func() {
 				})
 			})
 		})
+
+		It("compares signed and unsigned integers by value (https://github.com/onsi/gomega/issues/925)", func() {
+			Expect(-1).ShouldNot(BeNumerically("==", uint64(math.MaxUint64)))
+			Expect(uint64(math.MaxUint64)).ShouldNot(BeNumerically("==", -1))
+			Expect(-1).ShouldNot(BeNumerically("~", uint64(math.MaxUint64), 1))
+			Expect(uint64(math.MaxUint64)).ShouldNot(BeNumerically("~", -1, uint(1)))
+
+			Expect(uint(5)).Should(BeNumerically(">", -3))
+			Expect(uint(5)).Should(BeNumerically(">=", -3))
+			Expect(uint(5)).ShouldNot(BeNumerically("<", -3))
+			Expect(uint(5)).ShouldNot(BeNumerically("<=", -3))
+			Expect(-3).Should(BeNumerically("<", uint(5)))
+			Expect(-3).Should(BeNumerically("<=", uint(5)))
+			Expect(-3).ShouldNot(BeNumerically(">", uint(5)))
+			Expect(-3).ShouldNot(BeNumerically(">=", uint(5)))
+
+			Expect(int64(-1)).Should(BeNumerically("<", uint64(math.MaxUint64)))
+			Expect(uint64(math.MaxUint64)).Should(BeNumerically(">", int64(math.MinInt64)))
+			Expect(uint64(math.MaxInt64 + 1)).Should(BeNumerically(">", int64(math.MaxInt64)))
+			Expect(int64(math.MaxInt64)).Should(BeNumerically("<", uint64(math.MaxInt64+1)))
+
+			Expect(uint(3)).Should(BeNumerically("==", 3))
+			Expect(3).Should(BeNumerically("==", uint(3)))
+			Expect(uint(2)).Should(BeNumerically("~", -1, 3))
+			Expect(uint(2)).ShouldNot(BeNumerically("~", -1, 2))
+			Expect(-1).Should(BeNumerically("~", uint(2), uint(3)))
+			Expect(-1).ShouldNot(BeNumerically("~", uint(2), uint(2)))
+			Expect(uint64(math.MaxUint64)).ShouldNot(BeNumerically("~", -1, uint64(math.MaxUint64)))
+			Expect(uint64(math.MaxUint64)).Should(BeNumerically("~", -1, math.Exp2(64)))
+			Expect(uint64(math.MaxUint64)).ShouldNot(BeNumerically("~", int64(math.MinInt64), uint64(math.MaxUint64)))
+
+			// a negative threshold never matches, whatever the signedness of the operands
+			Expect(uint(5)).ShouldNot(BeNumerically("~", uint(5), -1))
+			Expect(5).ShouldNot(BeNumerically("~", 5, -1))
+		})
+
+		It("does not overflow when computing the distance between extreme integers (https://github.com/onsi/gomega/issues/928)", func() {
+			Expect(int64(math.MinInt64)).ShouldNot(BeNumerically("~", int64(math.MaxInt64), 1))
+			Expect(int64(math.MaxInt64)).ShouldNot(BeNumerically("~", int64(math.MinInt64), 1))
+			Expect(int64(math.MinInt64)).ShouldNot(BeNumerically("==", int64(math.MaxInt64), 1))
+			Expect(int64(math.MinInt64)).ShouldNot(BeNumerically("~", int64(math.MaxInt64), int64(math.MaxInt64)))
+			Expect(int64(math.MinInt64)).ShouldNot(BeNumerically("~", int64(math.MaxInt64), uint64(math.MaxUint64-1)))
+			Expect(int64(math.MinInt64)).Should(BeNumerically("~", int64(math.MaxInt64), uint64(math.MaxUint64)))
+			Expect(int64(math.MinInt64)).Should(BeNumerically("~", int64(math.MinInt64)+1, 1))
+			Expect(int64(math.MaxInt64)).Should(BeNumerically("~", int64(math.MaxInt64)-1, 1))
+			Expect(uint64(0)).ShouldNot(BeNumerically("~", uint64(math.MaxUint64), 1))
+		})
+
+		It("honors an explicit threshold for == with floats, as it does for ints and uints (https://github.com/onsi/gomega/issues/927)", func() {
+			Expect(7).Should(BeNumerically("==", 5, 10))
+			Expect(uint(7)).Should(BeNumerically("==", uint(5), 10))
+			Expect(7.0).Should(BeNumerically("==", 5.0, 10))
+			Expect(7.0).Should(BeNumerically("==", 5, 2))
+			Expect(7).Should(BeNumerically("==", 5.0, 2))
+			Expect(5.1).Should(BeNumerically("==", 5.0, 0.1))
+			Expect(5.1).ShouldNot(BeNumerically("==", 5.0, 0.01))
+			Expect(7.0).ShouldNot(BeNumerically("==", 5.0, 1))
+
+			// without a threshold, == on floats is still exact equality and does not pick up ~'s default 1e-8 tolerance
+			Expect(5.000000001).ShouldNot(BeNumerically("==", 5.0))
+			Expect(5.000000001).Should(BeNumerically("~", 5.0))
+		})
 	})
 
 	When("passed a non-number", func() {
 		It("should error", func() {
-			success, err := (&BeNumericallyMatcher{Comparator: "==", CompareTo: []interface{}{5}}).Match("foo")
+			success, err := (&BeNumericallyMatcher{Comparator: "==", CompareTo: []any{5}}).Match("foo")
 			Expect(success).Should(BeFalse())
 			Expect(err).Should(HaveOccurred())
 
@@ -140,24 +204,24 @@ var _ = Describe("BeNumerically", func() {
 			Expect(success).Should(BeFalse())
 			Expect(err).Should(HaveOccurred())
 
-			success, err = (&BeNumericallyMatcher{Comparator: "~", CompareTo: []interface{}{3.0, "foo"}}).Match(5.0)
+			success, err = (&BeNumericallyMatcher{Comparator: "~", CompareTo: []any{3.0, "foo"}}).Match(5.0)
 			Expect(success).Should(BeFalse())
 			Expect(err).Should(HaveOccurred())
 			Expect(err.Error()).Should(ContainSubstring("foo"))
 
-			success, err = (&BeNumericallyMatcher{Comparator: "==", CompareTo: []interface{}{"bar"}}).Match(5)
+			success, err = (&BeNumericallyMatcher{Comparator: "==", CompareTo: []any{"bar"}}).Match(5)
 			Expect(success).Should(BeFalse())
 			Expect(err).Should(HaveOccurred())
 
-			success, err = (&BeNumericallyMatcher{Comparator: "==", CompareTo: []interface{}{"bar"}}).Match("foo")
+			success, err = (&BeNumericallyMatcher{Comparator: "==", CompareTo: []any{"bar"}}).Match("foo")
 			Expect(success).Should(BeFalse())
 			Expect(err).Should(HaveOccurred())
 
-			success, err = (&BeNumericallyMatcher{Comparator: "==", CompareTo: []interface{}{nil}}).Match(0)
+			success, err = (&BeNumericallyMatcher{Comparator: "==", CompareTo: []any{nil}}).Match(0)
 			Expect(success).Should(BeFalse())
 			Expect(err).Should(HaveOccurred())
 
-			success, err = (&BeNumericallyMatcher{Comparator: "==", CompareTo: []interface{}{0}}).Match(nil)
+			success, err = (&BeNumericallyMatcher{Comparator: "==", CompareTo: []any{0}}).Match(nil)
 			Expect(success).Should(BeFalse())
 			Expect(err).Should(HaveOccurred())
 		})
@@ -165,7 +229,7 @@ var _ = Describe("BeNumerically", func() {
 
 	When("passed an unsupported comparator", func() {
 		It("should error", func() {
-			success, err := (&BeNumericallyMatcher{Comparator: "!=", CompareTo: []interface{}{5}}).Match(4)
+			success, err := (&BeNumericallyMatcher{Comparator: "!=", CompareTo: []any{5}}).Match(4)
 			Expect(success).Should(BeFalse())
 			Expect(err).Should(HaveOccurred())
 		})

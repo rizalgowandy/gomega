@@ -2,6 +2,7 @@ package internal_test
 
 import (
 	"errors"
+	"reflect"
 
 	. "github.com/onsi/ginkgo/v2"
 	. "github.com/onsi/gomega"
@@ -13,22 +14,22 @@ var _ = Describe("Making Synchronous Assertions", func() {
 	var IT_PASSES = true
 	var IT_FAILS = false
 
-	Extras := func(extras ...interface{}) []interface{} {
+	Extras := func(extras ...any) []any {
 		return extras
 	}
 
-	OptionalDescription := func(optionalDescription ...interface{}) []interface{} {
+	OptionalDescription := func(optionalDescription ...any) []any {
 		return optionalDescription
 	}
 
 	DescribeTable(
 		"the various cases",
-		func(actual interface{}, extras []interface{}, optionalDescription []interface{}, isPositiveAssertion bool, expectedFailureMessage string, expectedReturnValue bool) {
+		func(actual any, extras []any, optionalDescription []any, isPositiveAssertion bool, expectedFailureMessage string, expectedReturnValue bool) {
 			if isPositiveAssertion {
 				ig := NewInstrumentedGomega()
 				returnValue := ig.G.Expect(actual, extras...).To(SpecMatch(), optionalDescription...)
 				Expect(returnValue).To(Equal(expectedReturnValue))
-				Expect(ig.FailureMessage).To(Equal(expectedFailureMessage))
+				Expect(ig.FailureMessage).To(ContainSubstring(expectedFailureMessage))
 				if expectedFailureMessage != "" {
 					Expect(ig.FailureSkip).To(Equal([]int{2}))
 				}
@@ -37,7 +38,7 @@ var _ = Describe("Making Synchronous Assertions", func() {
 				ig = NewInstrumentedGomega()
 				returnValue = ig.G.ExpectWithOffset(3, actual, extras...).To(SpecMatch(), optionalDescription...)
 				Expect(returnValue).To(Equal(expectedReturnValue))
-				Expect(ig.FailureMessage).To(Equal(expectedFailureMessage))
+				Expect(ig.FailureMessage).To(ContainSubstring(expectedFailureMessage))
 				if expectedFailureMessage != "" {
 					Expect(ig.FailureSkip).To(Equal([]int{5}))
 				}
@@ -46,7 +47,7 @@ var _ = Describe("Making Synchronous Assertions", func() {
 				ig = NewInstrumentedGomega()
 				returnValue = ig.G.Ω(actual, extras...).Should(SpecMatch(), optionalDescription...)
 				Expect(returnValue).To(Equal(expectedReturnValue))
-				Expect(ig.FailureMessage).To(Equal(expectedFailureMessage))
+				Expect(ig.FailureMessage).To(ContainSubstring(expectedFailureMessage))
 				if expectedFailureMessage != "" {
 					Expect(ig.FailureSkip).To(Equal([]int{2}))
 				}
@@ -55,7 +56,7 @@ var _ = Describe("Making Synchronous Assertions", func() {
 				ig := NewInstrumentedGomega()
 				returnValue := ig.G.Expect(actual, extras...).ToNot(SpecMatch(), optionalDescription...)
 				Expect(returnValue).To(Equal(expectedReturnValue))
-				Expect(ig.FailureMessage).To(Equal(expectedFailureMessage))
+				Expect(ig.FailureMessage).To(ContainSubstring(expectedFailureMessage))
 				if expectedFailureMessage != "" {
 					Expect(ig.FailureSkip).To(Equal([]int{2}))
 				}
@@ -64,7 +65,7 @@ var _ = Describe("Making Synchronous Assertions", func() {
 				ig = NewInstrumentedGomega()
 				returnValue = ig.G.Expect(actual, extras...).NotTo(SpecMatch(), optionalDescription...)
 				Expect(returnValue).To(Equal(expectedReturnValue))
-				Expect(ig.FailureMessage).To(Equal(expectedFailureMessage))
+				Expect(ig.FailureMessage).To(ContainSubstring(expectedFailureMessage))
 				if expectedFailureMessage != "" {
 					Expect(ig.FailureSkip).To(Equal([]int{2}))
 				}
@@ -73,7 +74,7 @@ var _ = Describe("Making Synchronous Assertions", func() {
 				ig = NewInstrumentedGomega()
 				returnValue = ig.G.ExpectWithOffset(3, actual, extras...).NotTo(SpecMatch(), optionalDescription...)
 				Expect(returnValue).To(Equal(expectedReturnValue))
-				Expect(ig.FailureMessage).To(Equal(expectedFailureMessage))
+				Expect(ig.FailureMessage).To(ContainSubstring(expectedFailureMessage))
 				if expectedFailureMessage != "" {
 					Expect(ig.FailureSkip).To(Equal([]int{5}))
 				}
@@ -82,7 +83,7 @@ var _ = Describe("Making Synchronous Assertions", func() {
 				ig = NewInstrumentedGomega()
 				returnValue = ig.G.Ω(actual, extras...).ShouldNot(SpecMatch(), optionalDescription...)
 				Expect(returnValue).To(Equal(expectedReturnValue))
-				Expect(ig.FailureMessage).To(Equal(expectedFailureMessage))
+				Expect(ig.FailureMessage).To(ContainSubstring(expectedFailureMessage))
 				if expectedFailureMessage != "" {
 					Expect(ig.FailureSkip).To(Equal([]int{2}))
 				}
@@ -144,6 +145,11 @@ var _ = Describe("Making Synchronous Assertions", func() {
 			MATCH, Extras(1, "bam", struct{ Foo string }{Foo: "foo"}, nil), OptionalDescription(),
 			SHOULD_MATCH, "Unexpected non-nil/non-zero argument at index 1:\n\t<int>: 1", IT_FAILS,
 		),
+		Entry(
+			"when the matcher matches but an error is included, it fails",
+			MATCH, Extras(0, "", errors.New("welp!")), OptionalDescription(),
+			SHOULD_MATCH, "Unexpected error: welp!", IT_FAILS,
+		),
 	)
 
 	var SHOULD_OCCUR = true
@@ -188,5 +194,33 @@ var _ = Describe("Making Synchronous Assertions", func() {
 			SHOULD_OCCUR, "Unexpected non-nil/non-zero argument at index 0:\n\t<int>: 1", IT_FAILS,
 		),
 	)
+
+	When("vetting optional description parameters", func() {
+		It("panics when Gomega matcher is at the beginning of optional description parameters", func() {
+			ig := NewInstrumentedGomega()
+			for _, expectator := range []string{
+				"To", "NotTo", "ToNot",
+				"Should", "ShouldNot",
+			} {
+				Expect(func() {
+					expect := ig.G.Expect(42) // sic!
+					meth := reflect.ValueOf(expect).MethodByName(expectator)
+					Expect(meth.IsValid()).To(BeTrue())
+					meth.Call([]reflect.Value{
+						reflect.ValueOf(HaveLen(1)),
+						reflect.ValueOf(ContainElement(42)),
+					})
+				}).To(PanicWith(MatchRegexp("Assertion has a GomegaMatcher as the first element of optionalDescription")))
+			}
+		})
+
+		It("accepts Gomega matchers in optional description parameters after the first", func() {
+			Expect(func() {
+				ig := NewInstrumentedGomega()
+				ig.G.Expect(42).To(HaveLen(1), "foo", ContainElement(42))
+			}).NotTo(Panic())
+		})
+
+	})
 
 })

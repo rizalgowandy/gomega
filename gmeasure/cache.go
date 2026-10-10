@@ -6,6 +6,8 @@ import (
 	"fmt"
 	"os"
 	"path/filepath"
+
+	"github.com/onsi/gomega/internal/gutil"
 )
 
 const CACHE_EXT = ".gmeasure-cache"
@@ -66,15 +68,15 @@ List returns a list of all Cached Experiments found in the cache.
 */
 func (cache ExperimentCache) List() ([]CachedExperimentHeader, error) {
 	var out []CachedExperimentHeader
-	entries, err := os.ReadDir(cache.Path)
+	names, err := gutil.ReadDir(cache.Path)
 	if err != nil {
 		return out, err
 	}
-	for _, entry := range entries {
-		if filepath.Ext(entry.Name()) != CACHE_EXT {
+	for _, name := range names {
+		if filepath.Ext(name) != CACHE_EXT {
 			continue
 		}
-		header, err := cache.readHeader(entry.Name())
+		header, err := cache.readHeader(name)
 		if err != nil {
 			return out, err
 		}
@@ -87,15 +89,15 @@ func (cache ExperimentCache) List() ([]CachedExperimentHeader, error) {
 Clear empties out the cache - this will delete any and all detected cache files in the cache directory.  Use with caution!
 */
 func (cache ExperimentCache) Clear() error {
-	entries, err := os.ReadDir(cache.Path)
+	names, err := gutil.ReadDir(cache.Path)
 	if err != nil {
 		return err
 	}
-	for _, entry := range entries {
-		if filepath.Ext(entry.Name()) != CACHE_EXT {
+	for _, name := range names {
+		if filepath.Ext(name) != CACHE_EXT {
 			continue
 		}
-		err := os.Remove(filepath.Join(cache.Path, entry.Name()))
+		err := os.Remove(filepath.Join(cache.Path, name))
 		if err != nil {
 			return err
 		}
@@ -104,7 +106,7 @@ func (cache ExperimentCache) Clear() error {
 }
 
 /*
-Load fetches an experiment from the cache.  Lookup occurs by name.  Load requires that the version numer in the cache is equal to or greater than the passed-in version.
+Load fetches an experiment from the cache.  Lookup occurs by name.  Load requires that the version number in the cache is equal to or greater than the passed-in version.
 
 If an experiment with corresponding name and version >= the passed-in version is found, it is unmarshaled and returned.
 
@@ -112,42 +114,42 @@ If no experiment is found, or the cached version is smaller than the passed-in v
 
 When paired with Ginkgo you can cache experiments and prevent potentially expensive recomputation with this pattern:
 
-	const EXPERIMENT_VERSION = 1 //bump this to bust the cache and recompute _all_ experiments
+		const EXPERIMENT_VERSION = 1 //bump this to bust the cache and recompute _all_ experiments
 
-    Describe("some experiments", func() {
-    	var cache gmeasure.ExperimentCache
-    	var experiment *gmeasure.Experiment
+	    Describe("some experiments", func() {
+	    	var cache gmeasure.ExperimentCache
+	    	var experiment *gmeasure.Experiment
 
-    	BeforeEach(func() {
-    		cache = gmeasure.NewExperimentCache("./gmeasure-cache")
-    		name := CurrentSpecReport().LeafNodeText
-    		experiment = cache.Load(name, EXPERIMENT_VERSION)
-    		if experiment != nil {
-    			AddReportEntry(experiment)
-    			Skip("cached")
-    		}
-    		experiment = gmeasure.NewExperiment(name)
-			AddReportEntry(experiment)
-    	})
+	    	BeforeEach(func() {
+	    		cache = gmeasure.NewExperimentCache("./gmeasure-cache")
+	    		name := CurrentSpecReport().LeafNodeText
+	    		experiment = cache.Load(name, EXPERIMENT_VERSION)
+	    		if experiment != nil {
+	    			AddReportEntry(experiment)
+	    			Skip("cached")
+	    		}
+	    		experiment = gmeasure.NewExperiment(name)
+				AddReportEntry(experiment)
+	    	})
 
-    	It("foo runtime", func() {
-    		experiment.SampleDuration("runtime", func() {
-    			//do stuff
-    		}, gmeasure.SamplingConfig{N:100})
-    	})
+	    	It("foo runtime", func() {
+	    		experiment.SampleDuration("runtime", func() {
+	    			//do stuff
+	    		}, gmeasure.SamplingConfig{N:100})
+	    	})
 
-    	It("bar runtime", func() {
-    		experiment.SampleDuration("runtime", func() {
-    			//do stuff
-    		}, gmeasure.SamplingConfig{N:100})
-    	})
+	    	It("bar runtime", func() {
+	    		experiment.SampleDuration("runtime", func() {
+	    			//do stuff
+	    		}, gmeasure.SamplingConfig{N:100})
+	    	})
 
-    	AfterEach(func() {
-    		if !CurrentSpecReport().State.Is(types.SpecStateSkipped) {
-	    		cache.Save(experiment.Name, EXPERIMENT_VERSION, experiment)
-	    	}
-    	})
-    })
+	    	AfterEach(func() {
+	    		if !CurrentSpecReport().State.Is(types.SpecStateSkipped) {
+		    		cache.Save(experiment.Name, EXPERIMENT_VERSION, experiment)
+		    	}
+	    	})
+	    })
 */
 func (cache ExperimentCache) Load(name string, version int) *Experiment {
 	path := filepath.Join(cache.Path, cache.hashOf(name)+CACHE_EXT)

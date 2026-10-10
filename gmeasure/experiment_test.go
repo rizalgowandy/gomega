@@ -180,7 +180,7 @@ var _ = Describe("Experiment", func() {
 
 		ints := func(n int) []int {
 			out := []int{}
-			for i := 0; i < n; i++ {
+			for i := range n {
 				out = append(out, i)
 			}
 			return out
@@ -298,7 +298,7 @@ var _ = Describe("Experiment", func() {
 			}).Should(PanicWith("invalid precision type, must be time.Duration or int"))
 		})
 
-		It("panics if an unrecognized argumnet is passed in", func() {
+		It("panics if an unrecognized argument is passed in", func() {
 			Ω(func() {
 				e.RecordValue("sprockets", 2, "boom")
 			}).Should(PanicWith(`unrecognized argument "boom"`))

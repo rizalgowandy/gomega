@@ -2,6 +2,7 @@ package matchers_test
 
 import (
 	"encoding/json"
+	"strings"
 
 	. "github.com/onsi/ginkgo/v2"
 	. "github.com/onsi/gomega"
@@ -70,6 +71,92 @@ var _ = Describe("MatchJSONMatcher", func() {
 			Expect(success).Should(BeFalse())
 			Expect(err).Should(HaveOccurred())
 			Expect(err.Error()).Should(ContainSubstring("Expected 'oops' should be valid JSON"))
+		})
+	})
+
+	When("the JSON contains numbers too large for a float64", func() {
+		It("does not match distinct out-of-range numbers (https://github.com/onsi/gomega/issues/930)", func() {
+			success, _ := (&MatchJSONMatcher{JSONToMatch: `1e401`}).Match(`1e400`)
+			Expect(success).Should(BeFalse())
+
+			success, _ = (&MatchJSONMatcher{JSONToMatch: `{"a": 1e999}`}).Match(`{"a": 1e400}`)
+			Expect(success).Should(BeFalse())
+
+			success, _ = (&MatchJSONMatcher{JSONToMatch: `1e400`}).Match(`-1e400`)
+			Expect(success).Should(BeFalse())
+		})
+	})
+
+	When("comparing numbers", func() {
+		It("compares integers too large to be represented exactly by a float64 exactly (https://github.com/onsi/gomega/issues/931)", func() {
+			Expect(`12345678901234567890`).ShouldNot(MatchJSON(`12345678901234567891`))
+			Expect(`{"id": 9007199254740993}`).ShouldNot(MatchJSON(`{"id": 9007199254740992}`))
+			Expect(`[9007199254740993]`).ShouldNot(MatchJSON(`[9007199254740992]`))
+			Expect(`-9007199254740993`).ShouldNot(MatchJSON(`-9007199254740992`))
+			Expect(`1e400`).ShouldNot(MatchJSON(`1e401`))
+			Expect(`-1e400`).ShouldNot(MatchJSON(`1e400`))
+			Expect(`1e999999999`).ShouldNot(MatchJSON(`1e999999998`))
+
+			Expect(`12345678901234567890`).Should(MatchJSON(`12345678901234567890`))
+			Expect(`12345678901234567890`).Should(MatchJSON(`12345678901234567890.0`))
+			Expect(`12345678901234567890`).Should(MatchJSON(`1.234567890123456789e19`))
+			Expect(`12345678901234567890.0`).Should(MatchJSON(`1.234567890123456789e19`))
+			Expect(`{"id": 9007199254740993}`).Should(MatchJSON(`{"id": 9007199254740993}`))
+			Expect(`1e400`).Should(MatchJSON(`1e400`))
+			Expect(`1e20`).Should(MatchJSON(`100000000000000000000`))
+			Expect(`-1e999999999`).Should(MatchJSON(`-10e999999998`))
+			Expect(`1e99999999999999999999999`).Should(MatchJSON(`0.1e100000000000000000000000`))
+		})
+
+		It("compares every other number as a float64 (https://github.com/onsi/gomega/issues/931)", func() {
+			Expect(`0.1`).Should(MatchJSON(`0.10000000000000001`))
+			Expect(`3.14159265358979323846`).Should(MatchJSON(`3.141592653589793`))
+			Expect(`1`).Should(MatchJSON(`1.00000000000000001`))
+			Expect(`9007199254740992`).Should(MatchJSON(`9007199254740992.0`))
+			Expect(`9007199254740992`).Should(MatchJSON(`9007199254740992.5`))
+			Expect(`-9007199254740992`).Should(MatchJSON(`-9007199254740992.5`))
+			Expect(`1e-400`).Should(MatchJSON(`0`))
+
+			Expect(`0.1`).ShouldNot(MatchJSON(`0.2`))
+			Expect(`9007199254740991`).ShouldNot(MatchJSON(`9007199254740992`))
+		})
+
+		It("compares numbers too large for a float64 exactly, even if they are not integers", func() {
+			large := strings.Repeat("9", 400)
+			Expect(large + `.5`).Should(MatchJSON(large + `.50`))
+			Expect(large + `.5`).ShouldNot(MatchJSON(large + `.4`))
+			Expect(large + `.5`).ShouldNot(MatchJSON(large))
+		})
+
+		It("compares numbers by value, not by how they are written", func() {
+			Expect(`1`).Should(MatchJSON(`1.0`))
+			Expect(`100`).Should(MatchJSON(`1e2`))
+			Expect(`1E2`).Should(MatchJSON(`100`))
+			Expect(`100`).Should(MatchJSON(`1E+2`))
+			Expect(`0.01`).Should(MatchJSON(`1e-2`))
+			Expect(`1.5`).Should(MatchJSON(`15e-1`))
+			Expect(`-1.50`).Should(MatchJSON(`-15E-1`))
+			Expect(`0`).Should(MatchJSON(`-0`))
+			Expect(`0`).Should(MatchJSON(`0.0`))
+			Expect(`-0`).Should(MatchJSON(`0.0`))
+			Expect(`0e10`).Should(MatchJSON(`-0.0e-10`))
+			Expect(`{"a": 1}`).Should(MatchJSON(`{"a": 1.0}`))
+			Expect(`[1, {"b": [100, 0.5]}]`).Should(MatchJSON(`[1.0, {"b": [1e2, 5e-1]}]`))
+
+			Expect(`1`).ShouldNot(MatchJSON(`-1`))
+			Expect(`1`).ShouldNot(MatchJSON(`10`))
+			Expect(`1.5`).ShouldNot(MatchJSON(`15`))
+			Expect(`100`).ShouldNot(MatchJSON(`1e3`))
+			Expect(`1`).ShouldNot(MatchJSON(`"1"`))
+			Expect(`[1, {"b": [100, 0.5]}]`).ShouldNot(MatchJSON(`[1.0, {"b": [1e2, 5e-2]}]`))
+		})
+
+		It("reports the path to the first mismatched number", func() {
+			subject := MatchJSONMatcher{JSONToMatch: `{"a": [1, {"b": 9007199254740992}]}`}
+			actual := `{"a": [1.0, {"b": 9007199254740993}]}`
+			Expect(subject.Match(actual)).Should(BeFalse())
+			Expect(subject.FailureMessage(actual)).Should(ContainSubstring(`first mismatched key: "a"[1]."b"`))
+			Expect(subject.FailureMessage(actual)).Should(ContainSubstring(`9007199254740993`))
 		})
 	})
 

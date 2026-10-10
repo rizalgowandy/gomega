@@ -3,6 +3,7 @@ package matchers_test
 import (
 	. "github.com/onsi/ginkgo/v2"
 	. "github.com/onsi/gomega"
+	"github.com/onsi/gomega/matchers/internal/miter"
 )
 
 var _ = Describe("ConsistOf", func() {
@@ -62,7 +63,7 @@ var _ = Describe("ConsistOf", func() {
 		When("a matcher errors", func() {
 			It("should soldier on", func() {
 				Expect([]string{"foo", "bar", "baz"}).ShouldNot(ConsistOf(BeFalse(), "foo", "bar"))
-				Expect([]interface{}{"foo", "bar", false}).Should(ConsistOf(BeFalse(), ContainSubstring("foo"), "bar"))
+				Expect([]any{"foo", "bar", false}).Should(ConsistOf(BeFalse(), ContainSubstring("foo"), "bar"))
 			})
 		})
 	})
@@ -71,6 +72,13 @@ var _ = Describe("ConsistOf", func() {
 		It("should match against the elements of that argument", func() {
 			Expect([]string{"foo", "bar", "baz"}).Should(ConsistOf([]string{"foo", "bar", "baz"}))
 			Expect([]string{"foo", "bar", "baz"}).ShouldNot(ConsistOf([]string{"foo", "bar"}))
+		})
+	})
+
+	When("provided an expectation that has a nil value", func() {
+		It("should match without failure", func() {
+			Expect([]any{1, "two", nil}).Should(ConsistOf([]any{nil, 1, "two"}))
+			Expect([]any{1, "two", "nil", nil}).ShouldNot(ConsistOf([]any{nil, nil, 1, "two"}))
 		})
 	})
 
@@ -93,6 +101,17 @@ var _ = Describe("ConsistOf", func() {
 				})
 
 				expected := "Expected\n.*\\[2\\]\nto consist of\n.*\\[1, 2\\]\nthe missing elements were\n.*\\[1\\]"
+				Expect(failures).To(ConsistOf(MatchRegexp(expected)))
+			})
+		})
+
+		When("actual misses a nil element", func() {
+			It("prints the missing element", func() {
+				failures := InterceptGomegaFailures(func() {
+					Expect([]int{2}).Should(ConsistOf(nil, 2))
+				})
+
+				expected := "Expected\n.*\\[2\\]\nto consist of\n.*\\[nil, <int>2\\]\nthe missing elements were\n.*\\[nil\\]"
 				Expect(failures).To(ConsistOf(MatchRegexp(expected)))
 			})
 		})
@@ -154,9 +173,9 @@ the extra elements were
 		})
 
 		When("the expected values are different types", func() {
-			It("uses interface{} for the expectation slice", func() {
+			It("uses any for the expectation slice", func() {
 				failures := InterceptGomegaFailures(func() {
-					Expect([]interface{}{1, true}).To(ConsistOf(1, "C"))
+					Expect([]any{1, true}).To(ConsistOf(1, "C"))
 				})
 
 				expected := `to consist of
@@ -168,13 +187,51 @@ the extra elements were
 				Expect(failures).To(ConsistOf(MatchRegexp(expected)))
 			})
 
-			It("uses interface{} for the negated expectation slice", func() {
+			It("uses any for the negated expectation slice", func() {
 				failures := InterceptGomegaFailures(func() {
-					Expect([]interface{}{1, "B"}).NotTo(ConsistOf(1, "B"))
+					Expect([]any{1, "B"}).NotTo(ConsistOf(1, "B"))
 				})
 
 				expected := `not to consist of\n\s*<\[\]interface {} \| len:2, cap:2>: \[<int>1, <string>"B"\]`
 				Expect(failures).To(ConsistOf(MatchRegexp(expected)))
+			})
+		})
+	})
+
+	Context("iterators", func() {
+		BeforeEach(func() {
+			if !miter.HasIterators() {
+				Skip("iterators not available")
+			}
+		})
+
+		Context("with an iter.Seq", func() {
+			It("should do the right thing", func() {
+				Expect(universalIter).Should(ConsistOf("foo", "bar", "baz"))
+				Expect(universalIter).Should(ConsistOf("foo", "bar", "baz"))
+				Expect(universalIter).Should(ConsistOf("baz", "bar", "foo"))
+				Expect(universalIter).ShouldNot(ConsistOf("baz", "bar", "foo", "foo"))
+				Expect(universalIter).ShouldNot(ConsistOf("baz", "foo"))
+			})
+		})
+
+		Context("with an iter.Seq2", func() {
+			It("should do the right thing", func() {
+				Expect(universalIter2).Should(ConsistOf("foo", "bar", "baz"))
+				Expect(universalIter2).Should(ConsistOf("foo", "bar", "baz"))
+				Expect(universalIter2).Should(ConsistOf("baz", "bar", "foo"))
+				Expect(universalIter2).ShouldNot(ConsistOf("baz", "bar", "foo", "foo"))
+				Expect(universalIter2).ShouldNot(ConsistOf("baz", "foo"))
+			})
+		})
+
+		When("passed exactly one argument, and that argument is an iter.Seq", func() {
+			It("should match against the elements of that argument", func() {
+				Expect(universalIter).Should(ConsistOf(universalIter))
+				Expect(universalIter).ShouldNot(ConsistOf(fooElements))
+
+				Expect(universalIter2).Should(ConsistOf(universalIter))
+				Expect(universalIter2).ShouldNot(ConsistOf(fooElements))
 			})
 		})
 	})

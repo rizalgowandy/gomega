@@ -9,9 +9,11 @@ import (
 )
 
 type Book struct {
-	Title  string
-	Author person
-	Pages  int
+	Title   string
+	Author  person
+	Pages   int
+	Sequel  *Book
+	Prequel *Book
 }
 
 func (book Book) AuthorName() string {
@@ -24,6 +26,14 @@ func (book Book) AbbreviatedAuthor() person {
 		LastName:  book.Author.LastName[0:3],
 		DOB:       book.Author.DOB,
 	}
+}
+
+func (book Book) ReceiverTitle() string {
+	return book.Title
+}
+
+func (book *Book) PointerReceiverTitle() string {
+	return book.Title
 }
 
 func (book Book) NoReturn() {
@@ -54,11 +64,14 @@ var _ = Describe("HaveField", func() {
 				DOB:       time.Date(1802, 2, 26, 0, 0, 0, 0, time.UTC),
 			},
 			Pages: 2783,
+			Sequel: &Book{
+				Title: "Les Miserables 2",
+			},
 		}
 	})
 
 	DescribeTable("traversing the struct works",
-		func(field string, expected interface{}) {
+		func(field string, expected any) {
 			Ω(book).Should(HaveField(field, expected))
 		},
 		Entry("Top-level field with default submatcher", "Title", "Les Miserables"),
@@ -67,10 +80,11 @@ var _ = Describe("HaveField", func() {
 		Entry("Top-level method", "AuthorName()", "Victor Hugo"),
 		Entry("Nested method", "Author.DOB.Year()", BeNumerically("<", 1900)),
 		Entry("Traversing past a method", "AbbreviatedAuthor().FirstName", Equal("Vic")),
+		Entry("Traversing a pointer", "Sequel.Title", "Les Miserables 2"),
 	)
 
 	DescribeTable("negation works",
-		func(field string, expected interface{}) {
+		func(field string, expected any) {
 			Ω(book).ShouldNot(HaveField(field, expected))
 		},
 		Entry("Top-level field with default submatcher", "Title", "Les Mis"),
@@ -78,6 +92,7 @@ var _ = Describe("HaveField", func() {
 		Entry("Nested field", "Author.FirstName", "Hugo"),
 		Entry("Top-level method", "AuthorName()", "Victor M. Hugo"),
 		Entry("Nested method", "Author.DOB.Year()", BeNumerically(">", 1900)),
+		Entry("Traversing a pointer", "Sequel.Title", "Les Mis 2"),
 	)
 
 	Describe("when field lookup fails", func() {
@@ -117,19 +132,25 @@ var _ = Describe("HaveField", func() {
 			success, err = HaveField("Author.Abbreviation", "Vic").Match(book)
 			Ω(success).Should(BeFalse())
 			Ω(err.Error()).Should(ContainSubstring("HaveField could not find field named '%s' in struct:", "Abbreviation"))
+
+			success, err = HaveField("Prequel.Title", "Les Miserables 0").Match(book)
+			Ω(success).Should(BeFalse())
+			Ω(err.Error()).Should(ContainSubstring("HaveField encountered nil while dereferencing a pointer of type *matchers_test.Book."))
 		})
 	})
 
 	Describe("Failure Messages", func() {
-		It("renders the underlying matcher failure", func() {
+		It("renders the underlying matcher failure without caching the object", func() {
 			matcher := HaveField("Title", "Les Mis")
 			success, err := matcher.Match(book)
 			Ω(success).Should(BeFalse())
 			Ω(err).ShouldNot(HaveOccurred())
 
+			book.Title = "Les Miser"
 			msg := matcher.FailureMessage(book)
-			Ω(msg).Should(Equal("Value for field 'Title' failed to satisfy matcher.\nExpected\n    <string>: Les Miserables\nto equal\n    <string>: Les Mis"))
+			Ω(msg).Should(Equal("Value for field 'Title' failed to satisfy matcher.\nExpected\n    <string>: Les Miser\nto equal\n    <string>: Les Mis"))
 
+			book.Title = "Les Miserables"
 			matcher = HaveField("Title", "Les Miserables")
 			success, err = matcher.Match(book)
 			Ω(success).Should(BeTrue())
@@ -139,4 +160,26 @@ var _ = Describe("HaveField", func() {
 			Ω(msg).Should(Equal("Value for field 'Title' satisfied matcher, but should not have.\nExpected\n    <string>: Les Miserables\nnot to equal\n    <string>: Les Miserables"))
 		})
 	})
+
+	Describe("receiver lookup", func() {
+		DescribeTable("(pointer) receiver lookup on book pointer works",
+			func(field string, expected any) {
+				Ω(&book).Should(HaveField(field, expected))
+			},
+			Entry("non-pointer receiver", "ReceiverTitle()", "Les Miserables"),
+			Entry("pointer receiver", "PointerReceiverTitle()", "Les Miserables"),
+		)
+
+		It("correctly looks up a pointer receiver on a book value", func() {
+			Ω(book).Should(HaveField("PointerReceiverTitle()", "Les Miserables"))
+		})
+
+		It("correctly fails", func() {
+			matcher := HaveField("ReceiverTitle()", "Les Miserables")
+			answer := struct{}{}
+			Ω(matcher.Match(answer)).Error().Should(MatchError(
+				"HaveField could not find method named 'ReceiverTitle()' in struct of type struct {}."))
+		})
+	})
+
 })

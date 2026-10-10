@@ -1,13 +1,13 @@
 package matchers_test
 
 import (
-	"io"
 	"net/http"
 	"net/http/httptest"
 	"strings"
 
 	. "github.com/onsi/ginkgo/v2"
 	. "github.com/onsi/gomega"
+	"github.com/onsi/gomega/internal/gutil"
 )
 
 var _ = Describe("HaveHTTPStatus", func() {
@@ -121,16 +121,16 @@ var _ = Describe("HaveHTTPStatus", func() {
 				resp := &http.Response{
 					StatusCode: http.StatusBadGateway,
 					Status:     "502 Bad Gateway",
-					Body:       io.NopCloser(strings.NewReader("did not like it")),
+					Body:       gutil.NopCloser(strings.NewReader("did not like it")),
 				}
 				Expect(resp).To(HaveHTTPStatus(http.StatusOK))
 			})
 			Expect(failures).To(HaveLen(1))
 			Expect(failures[0]).To(Equal(`Expected
     <*http.Response>: {
-        Status:     <string>: "502 Bad Gateway"
+        Status:     <string>: 502 Bad Gateway
         StatusCode: <int>: 502
-        Body:       <string>: "did not like it"
+        Body:       <string>: did not like it
     }
 to have HTTP status
     <int>: 200`), failures[0])
@@ -141,16 +141,16 @@ to have HTTP status
 				resp := &http.Response{
 					StatusCode: http.StatusBadGateway,
 					Status:     "502 Bad Gateway",
-					Body:       io.NopCloser(strings.NewReader("did not like it")),
+					Body:       gutil.NopCloser(strings.NewReader("did not like it")),
 				}
 				Expect(resp).To(HaveHTTPStatus(http.StatusOK, http.StatusNotFound, "204 No content"))
 			})
 			Expect(failures).To(HaveLen(1))
 			Expect(failures[0]).To(Equal(`Expected
     <*http.Response>: {
-        Status:     <string>: "502 Bad Gateway"
+        Status:     <string>: 502 Bad Gateway
         StatusCode: <int>: 502
-        Body:       <string>: "did not like it"
+        Body:       <string>: did not like it
     }
 to have HTTP status
     <int>: 200
@@ -165,16 +165,16 @@ to have HTTP status
 				resp := &http.Response{
 					StatusCode: http.StatusOK,
 					Status:     "200 OK",
-					Body:       io.NopCloser(strings.NewReader("got it!")),
+					Body:       gutil.NopCloser(strings.NewReader("got it!")),
 				}
 				Expect(resp).NotTo(HaveHTTPStatus(http.StatusOK))
 			})
 			Expect(failures).To(HaveLen(1))
 			Expect(failures[0]).To(Equal(`Expected
     <*http.Response>: {
-        Status:     <string>: "200 OK"
+        Status:     <string>: 200 OK
         StatusCode: <int>: 200
-        Body:       <string>: "got it!"
+        Body:       <string>: got it!
     }
 not to have HTTP status
     <int>: 200`), failures[0])
@@ -185,16 +185,16 @@ not to have HTTP status
 				resp := &http.Response{
 					StatusCode: http.StatusOK,
 					Status:     "200 OK",
-					Body:       io.NopCloser(strings.NewReader("got it!")),
+					Body:       gutil.NopCloser(strings.NewReader("got it!")),
 				}
 				Expect(resp).NotTo(HaveHTTPStatus(http.StatusOK, "204 No content", http.StatusGone))
 			})
 			Expect(failures).To(HaveLen(1))
 			Expect(failures[0]).To(Equal(`Expected
     <*http.Response>: {
-        Status:     <string>: "200 OK"
+        Status:     <string>: 200 OK
         StatusCode: <int>: 200
-        Body:       <string>: "got it!"
+        Body:       <string>: got it!
     }
 not to have HTTP status
     <int>: 200

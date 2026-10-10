@@ -7,7 +7,9 @@ import (
 	"time"
 
 	. "github.com/onsi/ginkgo/v2"
+
 	. "github.com/onsi/gomega"
+	"github.com/onsi/gomega/format"
 	. "github.com/onsi/gomega/format"
 	"github.com/onsi/gomega/types"
 )
@@ -61,7 +63,34 @@ type SecretiveStruct struct {
 	byteArrValue   [3]byte
 	mapValue       map[string]int
 	structValue    AStruct
-	interfaceValue interface{}
+	interfaceValue any
+}
+
+type CustomFormatted struct {
+	Data  string
+	Count int
+}
+type NotCustomFormatted struct {
+	Data  string
+	Count int
+}
+
+type CustomError struct {
+	Details string
+}
+
+var _ error = &CustomError{}
+
+func (c *CustomError) Error() string {
+	return c.Details
+}
+
+func customFormatter(obj any) (string, bool) {
+	cf, ok := obj.(CustomFormatted)
+	if !ok {
+		return "", false
+	}
+	return fmt.Sprintf("%s (%d)", cf.Data, cf.Count), true
 }
 
 type GoStringer struct {
@@ -96,15 +125,22 @@ func (g gomegaStringerLong) GomegaString() string {
 	return strings.Repeat("s", MaxLength*2)
 }
 
+type gomegaStringerMultiline struct {
+}
+
+func (g gomegaStringerMultiline) GomegaString() string {
+	return "A\nB\nC"
+}
+
 var _ = Describe("Format", func() {
-	match := func(typeRepresentation string, valueRepresentation string, args ...interface{}) types.GomegaMatcher {
+	match := func(typeRepresentation string, valueRepresentation string, args ...any) types.GomegaMatcher {
 		if len(args) > 0 {
 			valueRepresentation = fmt.Sprintf(valueRepresentation, args...)
 		}
 		return Equal(fmt.Sprintf("%s<%s>: %s", Indent, typeRepresentation, valueRepresentation))
 	}
 
-	matchRegexp := func(typeRepresentation string, valueRepresentation string, args ...interface{}) types.GomegaMatcher {
+	matchRegexp := func(typeRepresentation string, valueRepresentation string, args ...any) types.GomegaMatcher {
 		if len(args) > 0 {
 			valueRepresentation = fmt.Sprintf(valueRepresentation, args...)
 		}
@@ -130,13 +166,13 @@ var _ = Describe("Format", func() {
 				Expect(Message(3, "to be three.")).Should(Equal("Expected\n    <int>: 3\nto be three."))
 			})
 
-			It("should print out an indented formatted representation of the value and the message, and trucate it when too long", func() {
+			It("should print out an indented formatted representation of the value and the message, and truncate it when too long", func() {
 				tooLong := strings.Repeat("s", MaxLength+1)
 				tooLongResult := strings.Repeat("s", MaxLength) + "...\n" + truncateHelpText
 				Expect(Message(tooLong, "to be truncated")).Should(Equal("Expected\n    <string>: " + tooLongResult + "\nto be truncated"))
 			})
 
-			It("should print out an indented formatted representation of the value and the message, and not trucate it when MaxLength = 0", func() {
+			It("should print out an indented formatted representation of the value and the message, and not truncate it when MaxLength = 0", func() {
 				MaxLength = 0
 				tooLong := strings.Repeat("s", MaxLength+1)
 				Expect(Message(tooLong, "to be truncated")).Should(Equal("Expected\n    <string>: " + tooLong + "\nto be truncated"))
@@ -369,7 +405,7 @@ var _ = Describe("Format", func() {
 			When("the slice is made of printable bytes", func() {
 				It("should present it as string", func() {
 					b := []byte("a b c")
-					Expect(Object(b, 1)).Should(matchRegexp(`\[\]uint8 \| len:5, cap:\d+`, `a b c`))
+					Expect(Object(b, 1)).Should(matchRegexp(`\[\]uint8 \| len:5, cap:\d+`, `\"a b c\"`))
 				})
 			})
 			When("the slice contains non-printable bytes", func() {
@@ -525,7 +561,7 @@ var _ = Describe("Format", func() {
 		Describe("formatting aliased types", func() {
 			It("should print out the correct alias type", func() {
 				Expect(Object(StringAlias("alias"), 1)).Should(match("format_test.StringAlias", `alias`))
-				Expect(Object(ByteAlias("alias"), 1)).Should(matchRegexp(`format_test\.ByteAlias \| len:5, cap:\d+`, `alias`))
+				Expect(Object(ByteAlias("alias"), 1)).Should(matchRegexp(`format_test\.ByteAlias \| len:5, cap:\d+`, `\"alias\"`))
 				Expect(Object(IntAlias(3), 1)).Should(match("format_test.IntAlias", "3"))
 			})
 		})
@@ -564,18 +600,18 @@ var _ = Describe("Format", func() {
 			})
 		})
 
-		Describe("formatting nested interface{} types", func() {
+		Describe("formatting nested any types", func() {
 			It("should print out the types of the container and value", func() {
-				Expect(Object([]interface{}{"foo"}, 1)).
+				Expect(Object([]any{"foo"}, 1)).
 					To(match("[]interface {} | len:1, cap:1", `[<string>"foo"]`))
 
-				Expect(Object(map[string]interface{}{"foo": true}, 1)).
+				Expect(Object(map[string]any{"foo": true}, 1)).
 					To(match("map[string]interface {} | len:1", `{"foo": <bool>true}`))
 
-				Expect(Object(struct{ A interface{} }{A: 1}, 1)).
+				Expect(Object(struct{ A any }{A: 1}, 1)).
 					To(match("struct { A interface {} }", "{A: <int>1}"))
 
-				v := struct{ A interface{} }{A: struct{ B string }{B: "foo"}}
+				v := struct{ A any }{A: struct{ B string }{B: "foo"}}
 				Expect(Object(v, 1)).To(match(`struct { A interface {} }`, `{
         A: <struct { B string }>{B: "foo"},
     }`))
@@ -586,6 +622,26 @@ var _ = Describe("Format", func() {
 			It("should format time as RFC3339", func() {
 				t := time.Date(2016, 10, 31, 9, 57, 23, 12345, time.UTC)
 				Expect(Object(t, 1)).Should(match("time.Time", `2016-10-31T09:57:23.000012345Z`))
+			})
+		})
+
+		Describe("formatting errors", func() {
+			It("should include the error() representation", func() {
+				err := fmt.Errorf("whoops: %w", fmt.Errorf("welp: %w", fmt.Errorf("ruh roh")))
+				Expect(Object(err, 1)).Should(MatchRegexp(`    \<\*fmt\.wrapError \| 0x[0-9a-f]*\>\: 
+    whoops\: welp\: ruh roh
+    \{
+        msg\: "whoops\: welp\: ruh roh",
+        err\: \<\*fmt.wrapError \| 0x[0-9a-f]*\>\{
+            msg\: "welp\: ruh roh",
+            err\: \<\*errors.errorString \| 0x[0-9a-f]*\>\{s\: "ruh roh"\},
+        \},
+    \}`))
+			})
+
+			It("should not panic if the error is a boxed nil", func() {
+				var err *CustomError
+				Expect(Object(err, 1)).Should(Equal("    <*format_test.CustomError | 0x0>: nil"))
 			})
 		})
 	})
@@ -639,7 +695,7 @@ var _ = Describe("Format", func() {
 
 	Describe("Handling interfaces", func() {
 		It("should unpack the interface", func() {
-			outerHash := map[string]interface{}{}
+			outerHash := map[string]any{}
 			innerHash := map[string]int{}
 
 			innerHash["inner"] = 3
@@ -653,7 +709,7 @@ var _ = Describe("Format", func() {
 
 	Describe("Handling recursive things", func() {
 		It("should not go crazy...", func() {
-			m := map[string]interface{}{}
+			m := map[string]any{}
 			m["integer"] = 2
 			m["map"] = m
 			Expect(Object(m, 1)).Should(ContainSubstring("..."))
@@ -661,14 +717,27 @@ var _ = Describe("Format", func() {
 
 		It("really should not go crazy...", func() {
 			type complexKey struct {
-				Value map[interface{}]int
+				Value map[any]int
 			}
 
 			complexObject := complexKey{}
-			complexObject.Value = make(map[interface{}]int)
+			complexObject.Value = make(map[any]int)
 
 			complexObject.Value[&complexObject] = 2
-			Expect(Object(complexObject, 1)).Should(ContainSubstring("..."))
+			Expect(Object(complexObject, 1)).Should(ContainSubstring("cyclic reference"))
+		})
+
+		It("detects cycles through pointers and stops descending", func() {
+			type node struct {
+				Name string
+				Next *node
+			}
+
+			n := &node{Name: "a"}
+			n.Next = n
+			output := Object(n, 1)
+			Expect(output).Should(ContainSubstring("cyclic reference"))
+			Expect(output).ShouldNot(ContainSubstring("..."))
 		})
 	})
 
@@ -705,11 +774,55 @@ var _ = Describe("Format", func() {
 				UseStringerRepresentation = false
 				Expect(Object(gomegaStringerLong{}, 1)).Should(Equal("    <format_test.gomegaStringerLong>: " + strings.Repeat("s", MaxLength*2)))
 			})
+
+			It("should indent what the GomegaString() returns", func() {
+				Expect(Object(gomegaStringerMultiline{}, 1)).Should(Equal("    <format_test.gomegaStringerMultiline>: A\n        B\n        C"))
+			})
+		})
+
+		Describe("when used with a registered CustomFormatter", func() {
+			It("pases objects through the custom formatter and uses the returned format, if handled", func() {
+				cf := CustomFormatted{"bob", 17}
+				ncf := NotCustomFormatted{"bob", 17}
+				Expect(Object(cf, 0)).To(Equal("<format_test.CustomFormatted>: {Data: \"bob\", Count: 17}"))
+				Expect(Object(ncf, 0)).To(Equal("<format_test.NotCustomFormatted>: {Data: \"bob\", Count: 17}"))
+
+				key := RegisterCustomFormatter(customFormatter)
+				Expect(Object(cf, 0)).To(Equal("<format_test.CustomFormatted>: bob (17)"))
+				Expect(Object(ncf, 0)).To(Equal("<format_test.NotCustomFormatted>: {Data: \"bob\", Count: 17}"))
+
+				UnregisterCustomFormatter(key)
+				Expect(Object(cf, 0)).To(Equal("<format_test.CustomFormatted>: {Data: \"bob\", Count: 17}"))
+				Expect(Object(ncf, 0)).To(Equal("<format_test.NotCustomFormatted>: {Data: \"bob\", Count: 17}"))
+			})
+
+			It("indents CustomFormatter output correctly", func() {
+				cf := CustomFormatted{"hey\nbob", 17}
+				DeferCleanup(UnregisterCustomFormatter, RegisterCustomFormatter(func(value any) (string, bool) {
+					cf, ok := value.(CustomFormatted)
+					if !ok {
+						return "", false
+					}
+					return fmt.Sprintf("The Data:\n%s\nThe Count:%d", cf.Data, cf.Count), true
+				}))
+
+				Ω(Object(cf, 1)).Should(Equal("    <format_test.CustomFormatted>: The Data:\n        hey\n        bob\n        The Count:17"))
+
+				type Wrapped struct {
+					MyObject   CustomFormatted
+					OuterCount int
+				}
+				wrapped := Wrapped{
+					MyObject:   cf,
+					OuterCount: 10,
+				}
+				Ω(Object(wrapped, 1)).Should(Equal("    <format_test.Wrapped>: {\n        MyObject: The Data:\n            hey\n            bob\n            The Count:17,\n        OuterCount: 10,\n    }"))
+
+			})
 		})
 	})
 
 	Describe("Printing a context.Context field", func() {
-
 		type structWithContext struct {
 			Context context.Context
 			Value   string
@@ -737,6 +850,21 @@ var _ = Describe("Format", func() {
 			It("Prints the context", func() {
 				Expect(Object(objWithContext, 1)).ShouldNot(ContainSubstring("<suppressed context>"))
 			})
+		})
+	})
+
+	Describe("when using format directly", func() {
+		It("always formats strings with quotes consistently", func() {
+			var err error = fmt.Errorf("fake")
+			indented := format.Object(err, 1)
+			unindented := format.Object(err, 0)
+
+			indentedLines := strings.Split(indented, "\n")
+			unindentedLines := strings.Split(unindented, "\n")
+
+			for i := range indentedLines {
+				Expect(strings.Trim(indentedLines[i], " ")).To(Equal(strings.Trim(unindentedLines[i], " ")))
+			}
 		})
 	})
 })
